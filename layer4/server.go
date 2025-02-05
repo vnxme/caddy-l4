@@ -340,15 +340,15 @@ func (pc *packetConn) Close() error {
 		udpBufPool.Put(pc.lastPacket.pooledBuf)
 		pc.lastPacket = nil
 	}
+	// We may have already done this earlier in Read(), but just in case
+	// Read() wasn't being called, (re-)notify server loop we're closed.
+	pc.closeCh <- pc.addr.String()
 	// This will abort any active Read() from another goroutine and return EOF
 	close(pc.readCh)
 	// Drain pending packets to ensure we release buffers back to the pool
 	for pkt := range pc.readCh {
 		udpBufPool.Put(pkt.pooledBuf)
 	}
-	// We may have already done this earlier in Read(), but just in case
-	// Read() wasn't being called, (re-)notify server loop we're closed.
-	pc.closeCh <- pc.addr.String()
 	// We don't call net.PacketConn.Close() here as we would stop the UDP
 	// server.
 	return nil
