@@ -27,9 +27,9 @@ const (
 }
 	` // Caddy configuration to test
 
-	testUDPHostname = "localhost"          // Hostname that clients connect to
-	testUDPPortEcho = 2000                 // Port serving echo only
-	testUDPWait     = 0 * time.Millisecond // How much time to wait between sending messages
+	testUDPHostname = "localhost"            // Hostname that clients connect to
+	testUDPPortEcho = 2000                   // Port serving echo only
+	testUDPWait     = 100 * time.Millisecond // How much time to wait between sending messages
 )
 
 func TestUDP(t *testing.T) {
@@ -41,8 +41,8 @@ func TestUDP(t *testing.T) {
 
 	address := fmt.Sprintf("%s:%d", testUDPHostname, testUDPPortEcho)
 
-	messages := make([][]byte, 1)
-	for i, _ := range messages {
+	messages := make([][]byte, 10)
+	for i := range messages {
 		messages[i] = []byte(fmt.Sprintf("ECHO%04d", i))
 	}
 
