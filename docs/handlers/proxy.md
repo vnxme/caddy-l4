@@ -42,6 +42,40 @@ The handler has the following optional fields:
 - `upstreams` may contain a list of `l4proxy.Upstream` structures (valid for JSON). In a Caddyfile, multiple `upstream`
   options or blocks are unmarshalled into a list of such structures.
 
+- `dynamic_upstreams` may contain an upstream-source module that discovers the upstreams at runtime instead of listing
+  them statically, so the backend set need not be restated in config when DNS already publishes it. In a Caddyfile it
+  is `dynamic <source> { ... }`. **Only one dynamic source can be configured per proxy handler**: a second `dynamic`
+  option is rejected, and `dynamic_upstreams` in JSON holds a single source, not a list. Three DNS sources are
+  provided:
+  - `srv` resolves SRV records. Options: `service`, `proto`, `name` (or just `name` for the full domain), `refresh`
+    (default `1m`), `grace_period` (serve stale results for this long on lookup failure), `dial_network`.
+  - `a` resolves A records (IPv4) for a `name` on a configured `port`. Options: `name`, `port`, `refresh`,
+    `grace_period`, `dial_network`.
+  - `aaaa` resolves AAAA records (IPv6); same options as `a`. The two are separate sources named after the DNS
+    record type, so `a` returns only IPv4 and `aaaa` only IPv6; pick one record type per proxy.
+
+  When `dynamic_upstreams` is configured, the static `upstreams` list may be empty. A few behaviours are worth knowing:
+  - **`a` and `aaaa` cannot be combined.** Because a proxy takes only one dynamic source, a single proxy cannot
+    discover both the IPv4 and the IPv6 addresses of a name. For a dual-stack backend set, publish SRV records and use
+    `srv`, whose targets may resolve to both address families.
+  - **Source fields accept only global placeholders.** `service`, `proto`, `name` and `port` may use placeholders
+    that are the same for every connection, such as `{env.*}`. These are filled in once, when the config is loaded.
+    Per-connection placeholders (e.g. `{l4.tls.server_name}`) are rejected with an error, because results are cached
+    once per source.
+  - **Discovered upstreams use TCP by default.** For a UDP listener, set `dial_network udp` on the source.
+  - **Lookup failures fall back to the static list.** If a refresh fails (and `grace_period` is not keeping an earlier
+    result alive), the handler proxies to the statically-configured `upstreams` instead. That list is usually empty with
+    dynamic upstreams, so the connection fails with `no upstreams available`.
+  - **`grace_period` serves stale results for as long as lookups keep failing**, not for a fixed window after the last
+    good result: each failed refresh pushes the window forward. While DNS is down, the last good set is used
+    indefinitely.
+  - **A refresh briefly blocks the connections served by that source.** The lookup runs while the source's lock is held,
+    so a slow resolver delays new connections through that one source (not other proxies) until it returns.
+  - **Discovered upstreams are bare.** Per-upstream settings — `tls` (so there is no TLS to the backend),
+    `max_connections`, `weight`, `local_address`, and the PROXY-protocol options — apply only to statically-listed
+    upstreams, not to discovered ones. SRV record priority and weight are not used. Active health checks also run on
+    statically-configured upstreams only; passive health checking and connection counting still apply to dynamic ones.
+
 **Active health checks** occur independently in a background goroutine. They run in the background on a timer.
 To minimally enable active health checks, set `active` field equal to an empty structure inside `health_checks` in
 a JSON configuration or include any active health check option into a Caddyfile.
